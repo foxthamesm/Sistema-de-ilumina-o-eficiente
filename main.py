@@ -1,75 +1,158 @@
 import flet as ft
-from fastapi import FastAPI
-from pydantic import BaseModel
-import threading
 import asyncio
+import httpx
 
-dados_tempo = []
-dados_ldr_a = []
-dados_ldr_b = []
-dados_intensidade = []
-
-MAX_PONTOS = 1000
-
-app_api = FastAPI()
-
-class Dados(BaseModel):
-    tempo: float
-    ldr_a: int
-    ldr_b: int
-    intensidade: int
-
-def adicionar_dado(lista, valor):
-    lista.append(valor)
-    if len(lista) > MAX_PONTOS:
-        lista.pop(0)
-
-@app_api.post("/enviar_dados")
-async def receber_dados(dados: Dados):
-    adicionar_dado(dados_tempo, dados.tempo)
-    adicionar_dado(dados_ldr_a, dados.ldr_a)
-    adicionar_dado(dados_ldr_b, dados.ldr_b)
-    adicionar_dado(dados_intensidade, dados.intensidade)
-    return {"mensagem": "Dados recebidos com sucesso."}
+API_URL = "https://SEU-ENDERECO-DA-API/render-url/dados"  # Atualize com seu endpoint real da API
 
 async def flet_main(page: ft.Page):
     page.title = "Gráfico em Tempo Real - Apresentação"
     page.theme_mode = ft.ThemeMode.DARK
 
+    texto_erro = ft.Text("Não tenho acesso a API", visible=False, color=ft.Colors.RED, size=20)
+
+    btn_leds_superior = ft.ElevatedButton("Gráfico LEDS superior", visible=False)
+    btn_leds_inferior = ft.ElevatedButton("Gráfico LEDS inferior", visible=False)
+
     chart = ft.LineChart(
         expand=True,
         min_y=0,
         max_y=1023,
-        series=[
-            ft.LineChartSeries(data_points=[], stroke_color=ft.colors.RED, name="LDR A"),
-            ft.LineChartSeries(data_points=[], stroke_color=ft.colors.BLUE, name="LDR B"),
-            ft.LineChartSeries(data_points=[], stroke_color=ft.colors.GREEN, name="Intensidade"),
+        data=[
+            ft.LineChartData(point=[],  color=ft.Colors.RED),
+            ft.LineChartData(point=[],  color=ft.Colors.BLUE_GREY),
+            ft.LineChartData(point=[],  color=ft.Colors.GREEN),
         ],
+        visible=False,
     )
 
-    page.add(chart)
+    page.add(texto_erro, btn_leds_superior, btn_leds_inferior, chart)
 
-    async def atualizar_chart():
-        while True:
-            if dados_tempo:
-                chart.series[0].data_points = [
-                    ft.LineChartDataPoint(x, y) for x, y in zip(dados_tempo, dados_ldr_a)
-                ]
-                chart.series[1].data_points = [
-                    ft.LineChartDataPoint(x, y) for x, y in zip(dados_tempo, dados_ldr_b)
-                ]
-                chart.series[2].data_points = [
-                    ft.LineChartDataPoint(x, y) for x, y in zip(dados_tempo, dados_intensidade)
-                ]
+    async def testar_api():
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(API_URL, timeout=3)
+                if r.status_code == 200:
+                    texto_erro.visible = False
+                    btn_leds_superior.visible = True
+                    btn_leds_inferior.visible = True
+                    chart.visible = True
+                    page.update()
+                    return True
+                else:
+                    raise Exception("Status code diferente de 200")
+            except Exception:
+                texto_erro.visible = True
+                btn_leds_superior.visible = False
+                btn_leds_inferior.visible = False
+                chart.visible = False
                 page.update()
-            await asyncio.sleep(0.5)
+                return False
 
-    asyncio.create_task(atualizar_chart())
+    async def atualizar_chart_periodicamente():
+        if not await testar_api():
+            return  # Não faz nada se API não acessível
 
-def main():
-    import uvicorn
-    threading.Thread(target=lambda: uvicorn.run(app_api, host="0.0.0.0", port=8000), daemon=True).start()
-    ft.app(target=flet_main, port=8501, view=None)
+        async with httpx.AsyncClient() as client:
+            while True:
+                try:
+                    r = await client.get(API_URL)
+                    if r.status_code == 200:
+                        data = r.json()
+                        if data.get("tempo"):
+                            chart.data[0].points = [
+                                ft.LineChartDataPoint(x, y) for x, y in zip(data["tempo"], data["ldr_a"])
+                            ]
+                            chart.data[1].points = [
+                                ft.LineChartDataPoint(x, y) for x, y in zip(data["tempo"], data["ldr_b"])
+                            ]
+                            chart.data[2].points = [
+                                ft.LineChartDataPoint(x, y) for x, y in zip(data["tempo"], data["intensidade"])
+                            ]
+                            page.update()
+                except Exception as e:
+                    print("Erro ao buscar dados da API:", e)
+                await asyncio.sleep(0.5)
+
+    asyncio.create_task(atualizar_chart_periodicamente())
 
 if __name__ == "__main__":
-    main()
+    ft.app(target=flet_main, port=8501, view=None)
+import flet as ft
+import asyncio
+import httpx
+
+API_URL = "https://SEU-ENDERECO-DA-API/render-url/dados"  # Atualize com seu endpoint real da API
+
+async def flet_main(page: ft.Page):
+    page.title = "Gráfico em Tempo Real - Apresentação"
+    page.theme_mode = ft.ThemeMode.DARK
+
+    texto_erro = ft.Text("Não tenho acesso a API", visible=False, color=ft.Colors.RED, size=20)
+
+    btn_leds_superior = ft.ElevatedButton("Gráfico LEDS superior", visible=False)
+    btn_leds_inferior = ft.ElevatedButton("Gráfico LEDS inferior", visible=False)
+
+    chart = ft.LineChart(
+        expand=True,
+        min_y=0,
+        max_y=1023,
+        data=[
+            ft.LineChartData(point=[], stroke_color=ft.Colors.RED, name="LDR A"),
+            ft.LineChartData(point=[], stroke_color=ft.Colors.BLUE, name="LDR B"),
+            ft.LineChartData(point=[], stroke_color=ft.Colors.GREEN, name="Intensidade"),
+        ],
+        visible=False,
+    )
+
+    page.add(texto_erro, btn_leds_superior, btn_leds_inferior, chart)
+
+    async def testar_api():
+        async with httpx.AsyncClient() as client:
+            try:
+                r = await client.get(API_URL, timeout=3)
+                if r.status_code == 200:
+                    texto_erro.visible = False
+                    btn_leds_superior.visible = True
+                    btn_leds_inferior.visible = True
+                    chart.visible = True
+                    page.update()
+                    return True
+                else:
+                    raise Exception("Status code diferente de 200")
+            except Exception:
+                texto_erro.visible = True
+                btn_leds_superior.visible = False
+                btn_leds_inferior.visible = False
+                chart.visible = False
+                page.update()
+                return False
+
+    async def atualizar_chart_periodicamente():
+        if not await testar_api():
+            return  # Não faz nada se API não acessível
+
+        async with httpx.AsyncClient() as client:
+            while True:
+                try:
+                    r = await client.get(API_URL)
+                    if r.status_code == 200:
+                        data = r.json()
+                        if data.get("tempo"):
+                            chart.data[0].points = [
+                                ft.LineChartDataPoint(x, y) for x, y in zip(data["tempo"], data["ldr_a"])
+                            ]
+                            chart.data[1].points = [
+                                ft.LineChartDataPoint(x, y) for x, y in zip(data["tempo"], data["ldr_b"])
+                            ]
+                            chart.data[2].points = [
+                                ft.LineChartDataPoint(x, y) for x, y in zip(data["tempo"], data["intensidade"])
+                            ]
+                            page.update()
+                except Exception as e:
+                    print("Erro ao buscar dados da API:", e)
+                await asyncio.sleep(0.5)
+
+    asyncio.create_task(atualizar_chart_periodicamente())
+
+if __name__ == "__main__":
+    ft.app(target=flet_main, port=8501, view=None)
