@@ -2,7 +2,7 @@ import flet as ft
 import asyncio
 import httpx
 
-API_URL = "https://SEU-ENDERECO-DA-API/render-url/dados"  # Atualize com seu endpoint real da API
+API_URL = "https://api-de-ilumina-o.onrender.com/dados"  # Atualize com seu endpoint real da API
 
 async def flet_main(page: ft.Page):
     page.title = "Gráfico em Tempo Real - Apresentação"
